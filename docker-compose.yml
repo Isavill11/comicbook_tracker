@@ -1,0 +1,11 @@
+services:
+  comic-tracker:
+    build: .
+    container_name: comic-tracker
+    restart: unless-stopped
+    ports:
+      - "8010:8000"
+    environment:
+      - COMICVINE_API_KEY=${COMICVINE_API_KEY}
+    volumes:
+      - ./data:/app/data

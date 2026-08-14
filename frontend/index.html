@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Longbox</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Anton&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<header class="topbar">
+  <h1 class="wordmark">LONGBOX</h1>
+  <button id="addBtn" class="add-btn">+ Add Comic</button>
+</header>
+
+<section class="character-rail" id="characterRail">
+  <!-- character avatar buttons injected here -->
+</section>
+
+<section class="filter-bar">
+  <select id="filterSeries"><option value="">All Series</option></select>
+  <select id="filterAuthor"><option value="">All Authors</option></select>
+  <select id="filterStoryline"><option value="">All Storylines</option></select>
+  <button id="clearFilters" class="clear-btn">Clear</button>
+</section>
+
+<main class="collection-grid" id="collectionGrid">
+  <!-- comic cards injected here -->
+</main>
+
+<!-- Upload / match modal -->
+<div id="uploadModal" class="modal hidden">
+  <div class="modal-body">
+    <h2>Add a comic</h2>
+
+    <div id="uploadStep">
+      <p class="hint">Upload a photo of the cover — we'll OCR the title and look it up on ComicVine.</p>
+      <input type="file" id="fileInput" accept="image/*">
+      <div id="uploadStatus"></div>
+    </div>
+
+    <div id="candidateStep" class="hidden">
+      <p class="hint">Which one is it?</p>
+      <div id="candidateList" class="candidate-list"></div>
+    </div>
+
+    <button id="closeModal" class="close-btn">Cancel</button>
+  </div>
+</div>
+
+<script src="app.js"></script>
+</body>
+</html>
