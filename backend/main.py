@@ -186,4 +186,6 @@ def _serialize(c: Comic):
 
 # ---------- serve the frontend ----------
 FRONTEND_DIR = os.path.join(os.path.dirname(__file__), "..", "frontend")
+COMICS_DB_DIR = os.path.join(os.path.dirname(__file__), "..", "comics_db")
+app.mount("/comics_db", StaticFiles(directory=COMICS_DB_DIR), name="comics_db")
 app.mount("/", StaticFiles(directory=FRONTEND_DIR, html=True), name="frontend")

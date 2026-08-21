@@ -3,53 +3,91 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Longbox</title>
+<title>Comic Library</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
+<link nonce="" rel="preconnect" href="https://fonts.gstatic.com" crossorigin="">
 <link href="https://fonts.googleapis.com/css2?family=Anton&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="carousel.css">
 <link rel="stylesheet" href="style.css">
 </head>
+
+
+
+
 <body>
 
-<header class="topbar">
-  <h1 class="wordmark">LONGBOX</h1>
-  <button id="addBtn" class="add-btn">+ Add Comic</button>
-</header>
+  <div class="app-wrapper">
+    <header class="toobar-header">
+      <div class="navbar-wrap">
+        <nav class="navbar" aria-label="Primary navigation">
+          <div class="navbar-brand">
+            <a href="/" class="navbar-brand-link" id="main-logo" title="IV Comics Logo" aria-label="IV Comics Logo"><span class="navbar-brand__mark">IV</span><span class="navbar-brand__text">COMICS</span></a>
+            
+            <!-- navbar menus li elements on left side of screen -->
+            <div id="navbar-navigation" class="navbar-navigation" role="none">
+              <ul role="menubar" class="navigation">
+                <li role="none" class="navbar-dropdown navigation__item">
+                  <a href="browse/comics" class="navigation__link" tabindex="0" title="ALL COMIC SERIES" aria-label="ALL COMIC SERIES" role="menuitem" aria-haspopup="false">ALL COMIC SERIES</a>
+                </li>
+                <li role="none" class="navigation-dropdown navigation__item">
+                  <a href="#" tabindex="0" title="BROWSE COLLECTIONS" aria-label="BROWSE COLLECTIONS" role="menuitem" class="navigation__link navbar-dropdown__toggle" aria-haspopup="true" aria-expanded="false">BROWSE COLLECTIONS</a>
+                    <ul aria-label="BROWSE COLLECTIONS" role="menu" class="navbar-dropdown__menu" data-v-2d32f882=""><!--[--><li role="none" class="navbar-dropdown__item" data-v-2d32f882=""><a href="/browse/comics" class="navbar-dropdown__link" tabindex="0" title="TOP STORYLINES" aria-label="TOP STORYLINES" role="menuitem" data-v-2d32f882="">TOP STORYLINES</a></li><li role="none" class="navbar-dropdown__item" data-v-2d32f882=""><a href="/browse/comics?sort=" class="navbar-dropdown__link" tabindex="0" title="EXPLORE CHARACTERS" aria-label="EXPLORE CHARACTERS" role="menuitem" data-v-2d32f882="">EXPLORE CHARACTERS</a></li><li role="none" class="navbar-dropdown__item" data-v-2d32f882=""><a href="/browse/comics?sort&amp;page=1&amp;series" class="navbar-dropdown__link" tabindex="0" title="COMICS SHOWCASE" aria-label="COMICS SHOWCASE" role="menuitem" data-v-2d32f882="">COMICS SHOWCASE</a></li><!--]--></ul>
+                </li>
+                <li role="none" class="navigation__item" data-v-2d32f882="">
+                  <a href="/dc" class="navigation__link" tabindex="0" title="EXPLORE DC" aria-label="EXPLORE DC" role="menuitem" aria-haspopup="false" data-v-2d32f882="">EXPLORE DC</a>
+                </li>
+                <li role="none" class="navigation__item" data-v-2d32f882="">
+                  <a href="/marvel" class="navigation__link" tabindex="0" title="EXPLORE  MARVEL" aria-label="EXPLORE MARVEL" role="menuitem" aria-haspopup="false" data-v-2d32f882="">EXPLORE MARVEL</a>
+                </li>
+              </ul>
 
-<section class="character-rail" id="characterRail">
-  <!-- character avatar buttons injected here -->
-</section>
+            <!-- Search button right side -->
+            <div class="navbar-actions">
+              <a href="/search" class="search-button-only" role="button" aria-label="Search"><span class="search-icon" aria-hidden="true"></span><span class="search-label">Search</span></a>
+            </div>
+          </div>
+        </nav>
+      </div>
+    </header>
 
-<section class="filter-bar">
-  <select id="filterSeries"><option value="">All Series</option></select>
-  <select id="filterAuthor"><option value="">All Authors</option></select>
-  <select id="filterStoryline"><option value="">All Storylines</option></select>
-  <button id="clearFilters" class="clear-btn">Clear</button>
-</section>
 
-<main class="collection-grid" id="collectionGrid">
-  <!-- comic cards injected here -->
-</main>
+    <main class="home-content">
+      <section class="masthead-component" aria-labelledby="featured-title">
+        <div class="masthead-slider" id="featuredSlides" aria-live="polite"><p class="featured-carousel__status">Loading your collection...</p></div>
+        <div class="carousel-progress" id="carouselProgress" aria-label="Choose a featured comic"></div>
+        <div class="masthead-controls" aria-label="Carousel controls">
+          <button class="masthead-control masthead-control--previous" id="carouselPrevious" type="button" aria-label="Previous comic">&lt;</button>
+          <button class="masthead-control masthead-control--next" id="carouselNext" type="button" aria-label="Next comic">&gt;</button>
+        </div>
+      </section>
+      <section class="dive-back-in" aria-labelledby="dive-back-title">
+        <div class="collection-heading"><h2 id="dive-back-title">Dive back in</h2><a href="/browse/comics" class="collection-heading__link">View collection</a></div>
+        <div class="collection-rail" id="collectionRail"><p class="featured-carousel__status">Loading your collection...</p></div>
+      </section>
+    </main>
 
-<!-- Upload / match modal -->
-<div id="uploadModal" class="modal hidden">
-  <div class="modal-body">
-    <h2>Add a comic</h2>
 
-    <div id="uploadStep">
-      <p class="hint">Upload a photo of the cover — we'll OCR the title and look it up on ComicVine.</p>
-      <input type="file" id="fileInput" accept="image/*">
-      <div id="uploadStatus"></div>
-    </div>
 
-    <div id="candidateStep" class="hidden">
-      <p class="hint">Which one is it?</p>
-      <div id="candidateList" class="candidate-list"></div>
-    </div>
-
-    <button id="closeModal" class="close-btn">Cancel</button>
   </div>
-</div>
-
-<script src="app.js"></script>
 </body>
-</html>
+<script src="carousel.js" defer></script>
+<!-- 
+    <main role="main" class="site-flex">
+      <div class="hub-component site-content">
+        <div class="hub-component site-content" data-hub="" data-homepage-collection="dcui-homepage-anon-A">
+          <section><div data-v-3236d4cc="" class="masthead-component multi-item">
+          <div data-v-7e24c0a7="" data-v-3236d4cc="" class="slider flickity-enabled is-draggable">
+          <div class="flickity-viewport" style="height: 512px; touch-action: pan-y;">
+          <div class="flickity-slider" style="left: 0px; transform: translateX(-100%);">
+
+
+
+
+      
+      </div> -->
+    
+    <!-- </main> -->
+
+
+
+

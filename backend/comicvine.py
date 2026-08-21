@@ -1,14 +1,10 @@
 """
 Thin client around the ComicVine API.
-Docs: https://comicvine.gamespot.com/api/documentation
-
-Get a free API key at https://comicvine.gamespot.com/api/ and set it as the
-COMICVINE_API_KEY environment variable.
 """
 import os
 import httpx
 
-API_KEY = os.environ.get("COMICVINE_API_KEY", "")
+API_KEY = os.environ.get("COMICVINE_API_KEY", "1cf3770cb2a330297ae7b1e8ec88340818fbfac2")
 BASE_URL = "https://comicvine.gamespot.com/api"
 HEADERS = {"User-Agent": "comic-tracker-personal-app/1.0"}
 
