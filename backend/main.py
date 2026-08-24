@@ -10,18 +10,19 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 from sqlalchemy import func
 
-from database import Base, engine, get_db
-from models import Comic
-import comicvine
-import ocr
+from backend.database import Base, engine, get_db
+# from backend.db_models import Comic
+from backend.db_models import Comic
+import backend.comicvine as comicvine
+import backend.ocr as ocr
 
 Base.metadata.create_all(bind=engine)
 
-UPLOAD_DIR = os.environ.get("UPLOAD_DIR", "/app/data/uploads")
+DEFAULT_UPLOAD_DIR = os.path.join(os.path.dirname(__file__), "..", "uploads")
+UPLOAD_DIR = os.environ.get("UPLOAD_DIR", DEFAULT_UPLOAD_DIR)
 os.makedirs(UPLOAD_DIR, exist_ok=True)
 
 app = FastAPI(title="Comic Tracker")
-
 
 # ---------- Step 1: upload a photo, get back candidate matches ----------
 
@@ -30,6 +31,7 @@ async def upload_cover(file: UploadFile = File(...)):
     ext = os.path.splitext(file.filename)[1] or ".jpg"
     saved_name = f"{uuid.uuid4().hex}{ext}"
     saved_path = os.path.join(UPLOAD_DIR, saved_name)
+
     with open(saved_path, "wb") as f:
         shutil.copyfileobj(file.file, f)
 

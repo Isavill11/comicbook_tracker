@@ -1,6 +1,6 @@
 from sqlalchemy import Column, Integer, String, Text, DateTime
 from datetime import datetime, timezone
-from database import Base
+from backend.database import Base
 
 
 class Comic(Base):

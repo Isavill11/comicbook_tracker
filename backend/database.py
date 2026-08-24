@@ -2,7 +2,9 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker, declarative_base
 import os
 
-DB_PATH = os.environ.get("DB_PATH", "/app/data/comics.db")
+DEFAULT_DB_PATH = os.path.join(os.path.dirname(__file__), "..", "comics.db")
+DB_PATH = os.environ.get("DB_PATH", DEFAULT_DB_PATH)
+os.makedirs(os.path.dirname(os.path.abspath(DB_PATH)), exist_ok=True)
 engine = create_engine(f"sqlite:///{DB_PATH}", connect_args={"check_same_thread": False})
 SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False)
 Base = declarative_base()
