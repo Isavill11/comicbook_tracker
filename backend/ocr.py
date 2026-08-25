@@ -42,7 +42,7 @@ def extract_issue_number(image_path:str, roi:list):
     reader = easyocr.Reader(['en'], gpu=True)
     extracted_integers = []
 
-    int_results = reader.readtext(image, allowlist='1234567890#')
+    int_results = reader.readtext(crop_img, allowlist='1234567890#')
 
     for bbox, text, confidence in int_results: 
         if confidence > 0.2:

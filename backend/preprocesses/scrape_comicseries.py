@@ -1,15 +1,16 @@
 import requests
 import time
 import json
+import os
 
 
 
-'''This is the script to scrape the dcuniverseinfinite comic collections to correct any mispellings in ocr process.'''
+'''This is the script to scrape the dcuniverseinfinite comic collections to correct any misspellings in OCR process.'''
 
+STUDIOS = ['DC', 'Marvel']
 
 '''FIRST STEP: DC'''
 
-STUDIOS = ['DC', 'Marvel']
 
 def scrape_dc():
     url = "https://www.dcuniverseinfinite.com/api/search_proxy/1/search"
@@ -23,7 +24,7 @@ def scrape_dc():
 
     dc_all_series = []
     page = 1
-    per_page = 100  # try bumping this up first
+    per_page = 100
 
     while True:
         payload = {
@@ -37,6 +38,7 @@ def scrape_dc():
         }
 
         resp = requests.post(url, json=payload, headers=headers)
+        resp.raise_for_status()  # fail loudly instead of silently parsing bad JSON
         data = resp.json()
 
         records = data.get("records", {}).get("comicseries", [])
@@ -52,24 +54,42 @@ def scrape_dc():
     return dc_all_series
 
 
-
 '''SECOND STEP: MARVEL'''
 
 def scrape_marvel():
-    pass
+    # placeholder until Marvel scraping is implemented
+    return []
 
 
+def main():
+    dc_all_series = scrape_dc()
+    marvel_all_series = scrape_marvel()
 
-dc_all_series = scrape_dc()
-marvel_all_series = scrape_marvel()
+    all_series_raw = {
+        "DC": dc_all_series,
+        "Marvel": marvel_all_series,
+    }
+
+    out_dir = "backend/preprocess"
+    os.makedirs(out_dir, exist_ok=True)  
 
 
-all_series = zip(STUDIOS, [dc_all_series, marvel_all_series])
+    with open(os.path.join(out_dir, "all_comic_series_raw.json"), "w") as f:
+        json.dump(all_series_raw, f, indent=2)
 
-# Save raw results
-with open("/backend/preprocess/all_comic_series_raw.json", "w") as f:
-    json.dump(all_series, f, indent=2)
 
-# # Build your name-only reference dict for OCR matching
-# series_names = sorted(set(s["title"] for s in all_series if "title" in s))
-# print(f"\nTotal unique series: {len(series_names)}")
+    
+    series_names = {
+        "DC": sorted({s["title"] for s in dc_all_series if "title" in s}),
+        "Marvel": sorted({s["title"] for s in marvel_all_series if "title" in s}),
+    }
+
+    print(f"\nDC unique series: {len(series_names['DC'])}")
+    print(f"Marvel unique series: {len(series_names['Marvel'])}")
+
+    with open(os.path.join(out_dir, "all_comic_series_names.json"), "w") as f:
+        json.dump(series_names, f, indent=2)
+
+
+if __name__ == "__main__":
+    main()

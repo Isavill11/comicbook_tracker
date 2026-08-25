@@ -2,6 +2,9 @@ import easyocr
 import numpy as np
 import cv2
 
+
+''' This file is purely to test whether ocr is working. give it the path to an image and it'll check the text.'''
+
 image = './comics_db/superboy_prime.png'
 reader = easyocr.Reader(['en'], gpu=True)  # gpu=True since you've got the RTX 5070
 # results = reader.readtext(image)
