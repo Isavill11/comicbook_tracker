@@ -1,13 +1,8 @@
+
+
 """
-Pulls raw text off a photographed comic cover so we have something to
-search ComicVine with. This is deliberately rough — the user picks the
-right result from a shortlist of thumbnails, so OCR just needs to get
-close enough (usually the series title in the logo is what comes through
-cleanest).
+The first script is tailored to pull only text from the comic book covers and the second will hopefully pull the issue number.
 """
-
-
-
 
 import easyocr
 import numpy as np
@@ -33,7 +28,7 @@ def extract_cover_text(image_path: str) -> str:
 
     return extracted_text
 
-def extract_issue_number(image_path:str, roi:list):
+def extract_issue_number(image_path:str, roi:list) -> list:
     '''return numbers extracted from the roi of a comic'''
     
     image = image_path
@@ -49,3 +44,9 @@ def extract_issue_number(image_path:str, roi:list):
             extracted_integers.append((text, confidence))
 
     
+
+
+image = r'comics_db\superboy_prime.png'
+
+
+print(extract_cover_text(image))

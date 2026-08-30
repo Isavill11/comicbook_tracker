@@ -12,7 +12,7 @@ from sqlalchemy import func
 
 from backend.database import Base, engine, get_db
 # from backend.db_models import Comic
-from backend.db_models import Comic
+from backend.Comics_sqlite import Comic
 import backend.comicvine as comicvine
 import backend.ocr as ocr
 
