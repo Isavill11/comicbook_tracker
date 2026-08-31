@@ -3,6 +3,7 @@ import shutil
 import uuid
 from typing import Optional, List
 
+import cv2
 from fastapi import FastAPI, UploadFile, File, Depends, HTTPException, Query
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
@@ -12,9 +13,11 @@ from sqlalchemy import func
 
 from backend.database import Base, engine, get_db
 # from backend.db_models import Comic
-from backend.Comics_sqlite import Comic
+from backend.comics_sqlite import Comic
 import backend.comicvine as comicvine
 import backend.ocr as ocr
+from backend.crop_comics import ComicCropper
+
 
 Base.metadata.create_all(bind=engine)
 
@@ -22,12 +25,34 @@ DEFAULT_UPLOAD_DIR = os.path.join(os.path.dirname(__file__), "..", "uploads")
 UPLOAD_DIR = os.environ.get("UPLOAD_DIR", DEFAULT_UPLOAD_DIR)
 os.makedirs(UPLOAD_DIR, exist_ok=True)
 
+# crops get their own subfolder so they don't clutter/collide with raw uploads
+CROP_DIR = os.path.join(UPLOAD_DIR, "crops")
+os.makedirs(CROP_DIR, exist_ok=True)
+
+
 app = FastAPI(title="Comic Tracker")
 
-# ---------- Step 1: upload a photo, get back candidate matches ----------
+comic_cropper = ComicCropper(r'backend\ML\runs\obb\train-6\weights\best.pt', confidence_level=0.85)
 
-@app.post("/api/upload")
-async def upload_cover(file: UploadFile = File(...)):
+
+# ---------- step 1: upload a photo, detect comic book instances and crop necessary images ----------
+
+class DetectedComic(BaseModel):
+    crop_id: str
+    crop_image_path: str          # relative path frontend can use to display the cropped cover
+    ocr_query: Optional[str]      # None if OCR couldn't read anything usable
+    needs_manual_text: bool       # True -> frontend should let user type/correct the title text
+
+
+class UploadResponse(BaseModel):
+    uploaded_image_path: str
+    annotated_image_path: str     # full image w/ bounding boxes drawn, useful for the user to sanity check detection
+    detected_comics: List[DetectedComic]
+
+
+@app.post("/upload", response_model=UploadResponse)
+def upload_cover(file: UploadFile = File(...)):
+    # 1. save the raw upload
     ext = os.path.splitext(file.filename)[1] or ".jpg"
     saved_name = f"{uuid.uuid4().hex}{ext}"
     saved_path = os.path.join(UPLOAD_DIR, saved_name)
@@ -35,26 +60,57 @@ async def upload_cover(file: UploadFile = File(...)):
     with open(saved_path, "wb") as f:
         shutil.copyfileobj(file.file, f)
 
-    query_text = ocr.extract_cover_text(saved_path)
-    if not query_text:
-        raise HTTPException(400, "Couldn't read any text off that cover — try a clearer, straight-on photo.")
+    # 2. run detection/cropping -> assumes crops is a list of cv2 (numpy) images,
+    #    one per detected comic, and annotated_cv2drawn_image is the full image w/ boxes drawn.
+    #    If crop_comics instead returns file paths or PIL images, only this block needs to change.
+    crops, annotated_cv2drawn_image = comic_cropper.crop_comics(saved_path)
 
-    candidates = await comicvine.search_issues(query_text)
-    return {
-        "uploaded_image_path": saved_name,
-        "ocr_query": query_text,
-        "candidates": candidates,
-    }
+    if not crops:
+        raise HTTPException(
+            400,
+            "No comics detected in that image — try a clearer photo with the covers fully visible."
+        )
+
+    annotated_name = f"{uuid.uuid4().hex}_annotated.jpg"
+    annotated_path = os.path.join(UPLOAD_DIR, annotated_name)
+    cv2.imwrite(annotated_path, annotated_cv2drawn_image)
+
+    # 3. for EACH detected comic: save its crop to disk, then OCR just that crop
+    detected_comics: List[DetectedComic] = []
+    for crop_image in crops:
+        crop_id = uuid.uuid4().hex
+        crop_filename = f"{crop_id}.jpg"
+        crop_path = os.path.join(CROP_DIR, crop_filename)
+        cv2.imwrite(crop_path, crop_image)
+
+        # ocr.extract_cover_text takes a path, so we pass the crop's saved path.
+        # Returns a joined string of recognized words, or None if nothing usable was found.
+        query_text = ocr.extract_cover_text(crop_path)
+
+        detected_comics.append(DetectedComic(
+            crop_id=crop_id,
+            crop_image_path=os.path.join("crops", crop_filename),
+            ocr_query=query_text,
+            needs_manual_text=query_text is None,
+        ))
+
+    return UploadResponse(
+        uploaded_image_path=saved_name,
+        annotated_image_path=annotated_name,
+        detected_comics=detected_comics,
+    )
 
 
-# ---------- Step 2: user picks a candidate, we save it to the collection ----------
+# ---------- Step 2 (next up): match OCR'd text against known series list, let user confirm,
+# then fetch issue number / send to Comic Vine. Not wired up yet -- picking this up after
+# the cropping step above is confirmed working end-to-end. ----------
 
 class ConfirmMatch(BaseModel):
     comicvine_id: str
     uploaded_image_path: Optional[str] = None
 
 
-@app.post("/api/comics")
+@app.post("/confirm")
 async def confirm_and_save(body: ConfirmMatch, db: Session = Depends(get_db)):
     detail = await comicvine.get_issue_detail(body.comicvine_id)
 
@@ -93,83 +149,6 @@ class ManualComic(BaseModel):
     cover_image_url: Optional[str] = None
 
 
-@app.post("/api/comics/manual")
-def add_manual(body: ManualComic, db: Session = Depends(get_db)):
-    next_order = (db.query(func.max(Comic.collection_order)).scalar() or 0) + 1
-    comic = Comic(collection_order=next_order, **body.model_dump())
-    db.add(comic)
-    db.commit()
-    db.refresh(comic)
-    return _serialize(comic)
-
-
-# ---------- Homepage listing, with filters ----------
-
-@app.get("/api/comics")
-def list_comics(
-    character: Optional[str] = None,
-    series: Optional[str] = None,
-    author: Optional[str] = None,
-    storyline: Optional[str] = None,
-    date_from: Optional[str] = None,
-    date_to: Optional[str] = None,
-    db: Session = Depends(get_db),
-):
-    q = db.query(Comic)
-    if series:
-        q = q.filter(Comic.series == series)
-    if author:
-        q = q.filter(Comic.author.ilike(f"%{author}%"))
-    if storyline:
-        q = q.filter(Comic.storyline.ilike(f"%{storyline}%"))
-    if date_from:
-        q = q.filter(Comic.cover_date >= date_from)
-    if date_to:
-        q = q.filter(Comic.cover_date <= date_to)
-    if character:
-        q = q.filter(Comic.characters.ilike(f"%{character}%"))
-
-    comics = q.order_by(Comic.collection_order.asc()).all()
-    return [_serialize(c) for c in comics]
-
-
-# ---------- Character avatar bar ----------
-
-@app.get("/api/characters")
-def list_characters(db: Session = Depends(get_db)):
-    comics = db.query(Comic).all()
-    counts = {}
-    covers = {}
-    for c in comics:
-        for name in c.character_list():
-            counts[name] = counts.get(name, 0) + 1
-            covers.setdefault(name, c.cover_image_url)
-    return [
-        {"name": name, "count": counts[name], "image_url": covers[name]}
-        for name in sorted(counts, key=lambda n: -counts[n])
-    ]
-
-
-# ---------- distinct filter option lists (series/authors/storylines) ----------
-
-@app.get("/api/filters")
-def filter_options(db: Session = Depends(get_db)):
-    comics = db.query(Comic).all()
-    return {
-        "series": sorted({c.series for c in comics if c.series}),
-        "authors": sorted({a.strip() for c in comics if c.author for a in c.author.split(",") if a.strip()}),
-        "storylines": sorted({c.storyline for c in comics if c.storyline}),
-    }
-
-
-@app.get("/api/uploads/{filename}")
-def serve_upload(filename: str):
-    path = os.path.join(UPLOAD_DIR, filename)
-    if not os.path.exists(path):
-        raise HTTPException(404)
-    return FileResponse(path)
-
-
 def _serialize(c: Comic):
     return {
         "id": c.id,
@@ -189,5 +168,6 @@ def _serialize(c: Comic):
 # ---------- serve the frontend ----------
 FRONTEND_DIR = os.path.join(os.path.dirname(__file__), "..", "frontend")
 COMICS_DB_DIR = os.path.join(os.path.dirname(__file__), "..", "comics_db")
+app.mount("/uploads", StaticFiles(directory=UPLOAD_DIR), name="uploads")
 app.mount("/comics_db", StaticFiles(directory=COMICS_DB_DIR), name="comics_db")
 app.mount("/", StaticFiles(directory=FRONTEND_DIR, html=True), name="frontend")
