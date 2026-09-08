@@ -2,77 +2,72 @@
 Thin client around the ComicVine API.
 """
 import os
-import httpx
-
-API_KEY = os.environ.get("COMICVINE_API_KEY", "1cf3770cb2a330297ae7b1e8ec88340818fbfac2")
-BASE_URL = "https://comicvine.gamespot.com/api"
-HEADERS = {"User-Agent": "comic-tracker-personal-app/1.0"}
+import json
+import requests
 
 
-async def search_issues(query: str, limit: int = 8):
-    """Text search against ComicVine issues. Returns a list of candidate dicts
-    the frontend can render as picker thumbnails."""
-    if not API_KEY:
-        raise RuntimeError("COMICVINE_API_KEY is not set")
 
+COMICVINE_API_KEY = os.environ.get("COMICVINE_API_KEY")
+BASE_URL = "https://comicvine.gamespot.com/api/search"
+
+
+def search_comicvine(query: str, resources: str = "issue,volume", limit: int = 10) -> dict:
+    """
+    Query the Comic Vine /search endpoint.
+
+    Args:
+        query: Free-text search string, e.g. "Absolute Batman 12 Snyder"
+        resources: Comma-separated resource types to filter on
+                   (e.g. "issue", "volume", "issue,volume")
+        limit: Max results to return (API caps this at 100 for /search... 
+               actually caps at 10 by default, so pass it explicitly if you want more)
+
+    Returns:
+        Parsed JSON response as a dict
+    """
+
+    
+    headers = {
+        # Comic Vine rejects requests without a real-looking User-Agent
+        "User-Agent": "Longbox/0.1 (comic cataloging app; personal project)"
+    }
     params = {
-        "api_key": API_KEY,
+        "api_key": COMICVINE_API_KEY,
         "format": "json",
         "query": query,
-        "resources": "issue",
+        "resources": resources,
         "limit": limit,
     }
-    async with httpx.AsyncClient(headers=HEADERS, timeout=15) as client:
-        resp = await client.get(f"{BASE_URL}/search/", params=params)
-        resp.raise_for_status()
-        data = resp.json()
 
-    candidates = []
-    for r in data.get("results", []):
-        volume = r.get("volume") or {}
-        candidates.append({
-            "comicvine_id": str(r.get("id")),
-            "title": volume.get("name") or r.get("name") or "Unknown",
-            "series": volume.get("name"),
-            "issue_number": r.get("issue_number"),
-            "cover_date": r.get("cover_date"),
-            "cover_image_url": (r.get("image") or {}).get("medium_url"),
-            "detail_url": r.get("api_detail_url"),
-        })
-    return candidates
+    response = requests.get(BASE_URL, headers=headers, params=params, timeout=10)
+    response.raise_for_status()  # raises on 4xx/5xx
+    return response.json()
+
+def find_comicvine_issue(volume_query: str, issue_number: str, resources="volume"):
+    data = search_comicvine(volume_query, resources=resources, limit=20)
+    candidates = data.get("results", [])
+
+    from rapidfuzz import fuzz
+    ranked = sorted(
+        candidates,
+        key=lambda c: fuzz.token_set_ratio(volume_query, c.get("name", "")),
+        reverse=True,
+    )
+    return ranked
 
 
-async def get_issue_detail(comicvine_id: str):
-    """Fetch full detail for one issue: writer credits, characters, storyline."""
-    if not API_KEY:
-        raise RuntimeError("COMICVINE_API_KEY is not set")
 
-    params = {
-        "api_key": API_KEY,
-        "format": "json",
-        "field_list": "name,issue_number,cover_date,image,person_credits,"
-                       "character_credits,volume,story_arc_credits,publisher",
-    }
-    async with httpx.AsyncClient(headers=HEADERS, timeout=15) as client:
-        resp = await client.get(f"{BASE_URL}/issue/4000-{comicvine_id}/", params=params)
-        resp.raise_for_status()
-        data = resp.json().get("results", {})
+query = "Absolute Batman Snyder 12"
 
-    writers = [p["name"] for p in data.get("person_credits", []) if "writer" in (p.get("role") or "").lower()]
-    characters = [c["name"] for c in data.get("character_credits", [])]
-    story_arcs = [s["name"] for s in data.get("story_arc_credits", [])]
-    volume = data.get("volume") or {}
 
-    return {
-        "comicvine_id": comicvine_id,
-        "title": volume.get("name") or data.get("name") or "Unknown",
-        "series": volume.get("name"),
-        "issue_number": data.get("issue_number"),
-        "cover_date": data.get("cover_date"),
-        "cover_image_url": (data.get("image") or {}).get("medium_url"),
-        "author": ", ".join(writers),
-        "characters": ", ".join(characters),
-        "storyline": ", ".join(story_arcs),
-        "publisher": (data.get("volume") or {}).get("publisher", {}).get("name")
-                     if isinstance(data.get("volume", {}).get("publisher"), dict) else None,
-    }
+if __name__ == "__main__":
+    result = search_comicvine(query, limit=10)
+    print(f"status_code: {result.get('status_code')}")
+    print(f"total_results: {result.get('number_of_total_results')}")
+    for item in result.get("results", []):
+        print(json.dumps({
+            "resource_type": item.get("resource_type"),
+            "name": item.get("name") or item.get("volume", {}).get("name"),
+            "issue_number": item.get("issue_number"),
+            "id": item.get("id"),
+        }, indent=2))

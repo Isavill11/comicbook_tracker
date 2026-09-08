@@ -8,9 +8,6 @@ import easyocr
 import numpy as np
 import cv2
 
-# Build the reader ONCE at import time. easyocr.Reader() loads the detection +
-# recognition models from disk, which takes real time -- doing that on every call
-# (as the original did) makes each crop's OCR pay that cost again.
 _reader = easyocr.Reader(['en'], gpu=True)
 
 
@@ -49,6 +46,6 @@ def extract_issue_number(image_path: str, roi: List[int]) -> List[Tuple[str, flo
     return [(text, confidence) for (bbox, text, confidence) in results if confidence > 0.2]
 
 
-# if __name__ == '__main__':
-#     image = r'comics_db\superboy_prime.png'
-#     print(extract_cover_text(image))
+if __name__ == '__main__':
+    image = r'test_output\crop_2.jpg'
+    print(extract_cover_text(image))
