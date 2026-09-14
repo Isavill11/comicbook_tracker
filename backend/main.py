@@ -4,7 +4,7 @@ import uuid
 from typing import Optional, List
 
 import cv2
-from fastapi import FastAPI, UploadFile, File, Depends, HTTPException, Query
+from fastapi import FastAPI, UploadFile, File, Depends, HTTPException, Query, Form
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
@@ -12,11 +12,13 @@ from sqlalchemy.orm import Session
 from sqlalchemy import func
 
 from backend.database import Base, engine, get_db
-# from backend.db_models import Comic
 from backend.comics_sqlite import Comic
-import backend.comicvine as comicvine
-import backend.ocr as ocr
 from backend.crop_comics import ComicCropper
+import backend.comicvine as comicvine
+from backend.ollama_ocr import ensure_ollama_running, query_ollama_vision
+import backend.ocr as ocr
+
+
 
 
 Base.metadata.create_all(bind=engine)
@@ -25,14 +27,14 @@ DEFAULT_UPLOAD_DIR = os.path.join(os.path.dirname(__file__), "..", "uploads")
 UPLOAD_DIR = os.environ.get("UPLOAD_DIR", DEFAULT_UPLOAD_DIR)
 os.makedirs(UPLOAD_DIR, exist_ok=True)
 
-# crops get their own subfolder so they don't clutter/collide with raw uploads
+# cropped images directory
 CROP_DIR = os.path.join(UPLOAD_DIR, "crops")
 os.makedirs(CROP_DIR, exist_ok=True)
-
 
 app = FastAPI(title="Comic Tracker")
 
 comic_cropper = ComicCropper(r'backend\ML\runs\obb\train-6\weights\best.pt', confidence_level=0.85)
+
 
 
 # ---------- step 1: upload a photo, detect comic book instances and crop necessary images ----------
@@ -40,8 +42,15 @@ comic_cropper = ComicCropper(r'backend\ML\runs\obb\train-6\weights\best.pt', con
 class DetectedComic(BaseModel):
     crop_id: str
     crop_image_path: str          # relative path frontend can use to display the cropped cover
-    ocr_query: Optional[str]      # None if OCR couldn't read anything usable
-    needs_manual_text: bool       # True -> frontend should let user type/correct the title text
+    series_title: Optional[str]      # None if OCR couldn't read anything usable
+    issue_number: Optional[int] = None
+    publisher: Optional[str] = None
+    creators: Optional[List] = None
+    cover_date: Optional[str] = None
+    storyline: Optional[str] = None
+    characters: Optional[str] = None  # comma separated
+
+    needs_manual_text: bool      # True -> frontend should let user type/correct the title text
 
 
 class UploadResponse(BaseModel):
@@ -51,7 +60,10 @@ class UploadResponse(BaseModel):
 
 
 @app.post("/upload", response_model=UploadResponse)
-def upload_cover(file: UploadFile = File(...)):
+def upload_cover(file: UploadFile = File(...), use_ollama: bool = Form(True)):
+    ''' Args: file - uploaded image file that contains comics user want to enter to db.
+              use_ollama - toggle/checkbox that frontend sends to api (t/f)'''
+
     # 1. save the raw upload
     ext = os.path.splitext(file.filename)[1] or ".jpg"
     saved_name = f"{uuid.uuid4().hex}{ext}"
@@ -60,22 +72,30 @@ def upload_cover(file: UploadFile = File(...)):
     with open(saved_path, "wb") as f:
         shutil.copyfileobj(file.file, f)
 
-    # 2. run detection/cropping -> assumes crops is a list of cv2 (numpy) images,
-    #    one per detected comic, and annotated_cv2drawn_image is the full image w/ boxes drawn.
-    #    If crop_comics instead returns file paths or PIL images, only this block needs to change.
+    # 2. run detection/cropping  
     crops, annotated_cv2drawn_image = comic_cropper.crop_comics(saved_path)
-
     if not crops:
         raise HTTPException(
             400,
-            "No comics detected in that image — try a clearer photo with the covers fully visible."
+            "No comics detected in that image, try a clearer photo with the covers fully visible."
         )
+
+# -------------------------------------------------------------------------------
+    ''' THIS PART IS FOR DEVELOPMENT PURPOSES ONLY. UNCOMMENT IT TO SAVE THE ANNOTATED YOLO DETECTIONS TO DIR
 
     annotated_name = f"{uuid.uuid4().hex}_annotated.jpg"
     annotated_path = os.path.join(UPLOAD_DIR, annotated_name)
-    cv2.imwrite(annotated_path, annotated_cv2drawn_image)
+    cv2.imwrite(annotated_path, annotated_cv2drawn_image)'''
+# -------------------------------------------------------------------------------
+    try:
+        if use_ollama:
+            ensure_ollama_running()
+            ollama_running = True
+    except RuntimeError:
+        print('Ollama is not installed or running, running python OCR instead.')
+        ollama_running = False
 
-    # 3. for EACH detected comic: save its crop to disk, then OCR just that crop
+
     detected_comics: List[DetectedComic] = []
     for crop_image in crops:
         crop_id = uuid.uuid4().hex
@@ -83,20 +103,37 @@ def upload_cover(file: UploadFile = File(...)):
         crop_path = os.path.join(CROP_DIR, crop_filename)
         cv2.imwrite(crop_path, crop_image)
 
-        # ocr.extract_cover_text takes a path, so we pass the crop's saved path.
-        # Returns a joined string of recognized words, or None if nothing usable was found.
-        query_text = ocr.extract_cover_text(crop_path)
+    # 3. for EACH detected comic: save its crop to disk, then OCR just that crop.
+    #    If ollama is enabled, then use llm model to analyze the image. if not, use python ocr. 
+
+        if use_ollama and ollama_running:
+            # query_ollama_vision takes the crop path, calls an ollama model, and returns a json result with the issue num, title, publisher, and creators, and confidence level.
+
+            ollama_result = query_ollama_vision(crop_path)
+            series_title = ollama_result.get('series_title')
+            issue_number = ollama_result.get('issue_number')
+            publisher = ollama_result.get('publisher')
+            creators = ollama_result.get('creators_visible')
+            needs_manual = ollama_result.get('confidence') != 'high' or not series_title
+
+        else:
+            
+            # ocr.extract_cover_text takes a path, returns a joined string of recognized words, or None if nothing usable was found.
+            series_title = ocr.extract_cover_text(crop_path)
 
         detected_comics.append(DetectedComic(
             crop_id=crop_id,
             crop_image_path=os.path.join("crops", crop_filename),
-            ocr_query=query_text,
-            needs_manual_text=query_text is None,
+            series_title=series_title, # this one can either be an ollama series title OR a python ocr result.
+            issue_number=issue_number,
+            publisher=publisher,
+            creators=creators,
+            needs_manual_text=needs_manual is None,
         ))
 
     return UploadResponse(
         uploaded_image_path=saved_name,
-        annotated_image_path=annotated_name,
+        # annotated_image_path=annotated_name,
         detected_comics=detected_comics,
     )
 
