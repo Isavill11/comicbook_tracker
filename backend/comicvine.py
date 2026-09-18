@@ -52,13 +52,28 @@ ISSUE_FIELD_LIST = ','.join([
 
 @dataclass
 class Creator:
+    comicvine_id: Optional[int]  # ComicVine person id - lets the DB layer get-or-create by id, not by name
     name: str
     role: str  # ComicVine returns this as a comma-separated string, e.g. 'writer, penciler'
 
 
 @dataclass
 class Character:
+    comicvine_id: Optional[int]  # ComicVine character id - same get-or-create reasoning as Creator
     name: str
+
+
+@dataclass
+class VolumeRecord:
+    '''Normalized /volume detail. Separate from ComicIssueRecord because the
+    'volume' object nested inside an /issue response only ever has id+name -
+    publisher/start_year/artwork require a dedicated get_volume() call.'''
+
+    comicvine_id: int
+    name: str
+    publisher: Optional[str]
+    start_year: Optional[str]
+    image_url: Optional[str]
 
 
 @dataclass
@@ -303,6 +318,39 @@ class ComicVineClient:
 
         return record
 
+    def get_issue_detail(self, issue_id: int) -> Optional[ComicIssueRecord]:
+        '''Fetch one issue directly by its ComicVine id - what POST /comics
+        should call with the id the user picked from a /search candidate list,
+        since at that point you already know the exact issue and don't need
+        the volume+issue_number roundtrip that hydrate() does.'''
+
+        data = self._get(f'issue/4000-{issue_id}', {'field_list': ISSUE_FIELD_LIST})
+        raw = data.get('results')
+        if not raw:
+            return None
+        return self._normalize_issue(raw)
+
+    def get_volume(self, volume_id: int) -> Optional[VolumeRecord]:
+        '''Fetch volume-level detail (publisher, start_year, cover art) - not
+        included on the 'volume' stub nested inside an /issue response.
+        Call this once per new volume_id you see and cache the result in
+        your Volume table; every later issue from that series reuses it.'''
+
+        data = self._get(f'volume/4050-{volume_id}', {'field_list': 'id,name,publisher,start_year,image'})
+        raw = data.get('results')
+        if not raw:
+            return None
+
+        publisher = (raw.get('publisher') or {}).get('name')
+        image = raw.get('image') or {}
+        return VolumeRecord(
+            comicvine_id=raw['id'],
+            name=raw.get('name'),
+            publisher=publisher,
+            start_year=raw.get('start_year'),
+            image_url=image.get('super_url'),
+        )
+
     def hydrate(self, record: ComicIssueRecord) -> Optional[ComicIssueRecord]:
         '''call once user picks candidate from the top-3 list.
         given the candidates id, fetch the full record (credits + characters) via the precise volume+issue filter.'''
@@ -330,11 +378,11 @@ class ComicVineClient:
         volume = raw.get('volume') or {}
 
         creators = [
-            Creator(name=c.get('name', ''), role=c.get('role', ''))
+            Creator(comicvine_id=c.get('id'), name=c.get('name', ''), role=c.get('role', ''))
             for c in raw.get('person_credits', []) or []
         ]
         characters = [
-            Character(name=c.get('name', ''))
+            Character(comicvine_id=c.get('id'), name=c.get('name', ''))
             for c in raw.get('character_credits', []) or []
         ]
 
