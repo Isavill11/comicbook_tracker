@@ -1,13 +1,26 @@
 """
-test_ollama_vision.py
+local Ollama vision model athat can analyze comic covers for identification. 
 
-Standalone test script to compare a local Ollama vision model against
-the existing EasyOCR + SeriesMatcher pipeline for comic cover identification.
+inputs: 
+    - image_path: str
+
+returns: 
+    {
+        "series_title": "the comic's series title, best guess, correcting for stylized fonts",
+        "issue_number": "the issue number if visible, else null",
+        "publisher": "DC, Marvel, or other/unknown",
+        "creators_visible": ["any creator surnames visible on the cover, e.g. writer/artist credits"],
+        "confidence": "high, medium, or low - your confidence in series_title",
+        "cover_date": Optional[str] = None
+        "storyline": Optional[str] = None
+        "characters": Optional[str] = None  # comma separated
+    }
 
 Usage:
     ollama pull qwen3-vl:8b
-    ollama serve   # if not already running as a service
-    python test_ollama_vision.py path/to/cropped_cover.jpg
+    ollama serve
+    on terminal run:
+    python ollama_ocr.py path/to/cropped_cover.jpg
 """
 
 import base64
@@ -154,14 +167,7 @@ def main():
         result = query_ollama_vision(image_path)
         print(json.dumps(result, indent=2))
 
-        # TODO:
-        # - feed result["series_title"] into SeriesMatcher.match_series()
-        #   and compare confidence bands against this model's stated confidence
-        # - feed result["creators_visible"] into your surname-lookup index
-        #   the same way you currently do with EasyOCR surnames
-        # - log elapsed_seconds across a batch to check throughput on
-        #   a full stack-of-comics upload (this is the real cost question:
-        #   EasyOCR is near-instant per crop, a 8B VLM call is not)
+
 
 
 if __name__ == "__main__":

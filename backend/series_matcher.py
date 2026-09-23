@@ -10,16 +10,6 @@ publisher, and a separate creator surname index) and exposes:
   - identify_creators()  surname-based signal from clean OCR tokens
   - resolve()             the three-band decision pipeline for /upload
 
-NOTE ON DATA SHAPE: all_comic_series.json currently stores *titles only*,
-grouped by publisher — there's no per-series creator/author linkage in the
-local data. Because of that, identify_creators() can't narrow the local
-title candidate pool the way an author field would (that data doesn't
-exist yet). Instead it's an independent signal, surfaced on the
-"new_series" band as a hint the /upload endpoint can fold into its Comic
-Vine query (e.g. "<best-guess title> <creator surname>") before assuming
-a series is genuinely new. If you later scrape per-series person_credits
-from Comic Vine's volume/issue resources, that's the point where local
-author-based narrowing becomes possible.
 """
 
 import json
@@ -27,24 +17,12 @@ import re
 from typing import Dict, List, Tuple
 from rapidfuzz import fuzz, process
 
-# words like "The" or a trailing publication-year range add noise to the
-# word-by-word comparison without adding identifying information
 _YEAR_RANGE_RE = re.compile(r'\s*\(\d.*?\)')
 _STOPWORDS = {"the", "of", "in", "a", "an"}
 
-# Confidence bands for resolve(). These are starting points — tune against
-# real garbled OCR output (see the test cases at the bottom) once you have
-# more labeled examples.
 DEFAULT_AUTO_ACCEPT_THRESHOLD = 90.0
 DEFAULT_CONFIRM_THRESHOLD = 65.0
-# anything below DEFAULT_CONFIRM_THRESHOLD is a "new_series" candidate —
-# the /upload endpoint should check Comic Vine before trusting that,
-# since the local cache may just be stale.
-
 DEFAULT_CREATOR_SURNAME_THRESHOLD = 85
-
-# How many candidates resolve() surfaces for the user to pick from
-# (or reject in favor of a manual entry), regardless of confidence band.
 DEFAULT_TOP_N = 5
 
 
@@ -182,16 +160,8 @@ class SeriesMatcher:
           {"band": "auto_accept", "candidates": [(publisher, title, score), ...]}
           {"band": "confirm",     "candidates": [...]}
           {"band": "new_series",  "candidates": [...], "creator_hint": {...} | None}
-
-        auto_accept means the top candidate is confident enough to
-        pre-select by default; confirm means show the list and let the
-        user pick; new_series means even the top candidate is weak — the
-        caller should check Comic Vine (using the top candidate's title
-        plus creator_hint, if present, to sharpen that query) before
-        assuming the user needs to make a fully manual entry, since the
-        local cache may just be stale rather than genuinely missing it.
-        candidates can be empty if ocr_tokens had nothing usable at all.
         """
+
         matches = self.match_series(ocr_tokens, top_n=top_n)
         top_score = matches[0][2] if matches else 0.0
 

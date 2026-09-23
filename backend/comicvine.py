@@ -31,7 +31,7 @@ BASE_URL = 'https://comicvine.gamespot.com/api'
 USER_AGENT = 'Longbox/0.1 (comic cataloging app; personal project)'
 
 # Fields we actually want back from ComicVine for the precise lookup.
-# Notably includes person_credits/character_credits, which /search omits.
+
 ISSUE_FIELD_LIST = ','.join([
     'id',
     'name',
@@ -65,10 +65,6 @@ class Character:
 
 @dataclass
 class VolumeRecord:
-    '''Normalized /volume detail. Separate from ComicIssueRecord because the
-    'volume' object nested inside an /issue response only ever has id+name -
-    publisher/start_year/artwork require a dedicated get_volume() call.'''
-
     comicvine_id: int
     name: str
     publisher: Optional[str]
@@ -78,8 +74,6 @@ class VolumeRecord:
 
 @dataclass
 class ComicIssueRecord:
-    '''Normalized representation of a single ComicVine issue, ready to hand to your DB layer.'''
-
     comicvine_id: int
     name: Optional[str]
     issue_number: Optional[str]
@@ -113,7 +107,7 @@ class ComicVineClient:
         self.min_request_interval = min_request_interval
         self._last_request_time = 0.0
 
-    # ---- low-level request handling ----------------------------------------
+    # ---- low-level request handling ------------
 
     def _throttle(self):
         '''ComicVine's free tier is easy to hammer by accident during a batch
@@ -218,7 +212,20 @@ class ComicVineClient:
 
         return min(score, 100.0)
 
-    # ---- volume lookup --------------------------------------------------------
+    @classmethod
+    def _record_has_creator(cls, record: ComicIssueRecord, creator: str) -> bool:
+        '''Token-overlap check (not exact match) so a surname-only hint like
+        "Snyder" matches a full credit name like "Scott Snyder".'''
+
+        creator_tokens = set(cls._normalized_tokens(creator))
+        if not creator_tokens:
+            return False
+        for person in record.creators:
+            if creator_tokens & set(cls._normalized_tokens(person.name)):
+                return True
+        return False
+
+    # ---- volume lookup --------------------
 
     def best_volume_matches(self, query: str, limit: int = 20, top_n: int = 5) -> list[dict]:
         '''fuzzy-rank candidate volumes and return up to top_n.'''
@@ -236,7 +243,6 @@ class ComicVineClient:
         return ranked[:top_n]
 
     # ---- precise issue lookup -----------------------------
-
     def get_issue_by_volume(self, volume_id: int, issue_number: str) -> Optional[dict]:
         '''Filters directly on volume + issue_number instead of ranking /search
         hits, and requests field_list so creators/characters come back.'''
@@ -266,7 +272,7 @@ class ComicVineClient:
         )
         return [self._normalize_issue(c) for c in ranked[:top_n]]
 
-    # ---- orchestration ----------------------------------------------------------
+    # ---- orchestration -----------------
 
     def fetch_issue(
         self,
@@ -290,31 +296,65 @@ class ComicVineClient:
         if not title:
             raise ValueError('title is required when issue is provided')
 
-        volume_candidates = self.best_volume_matches(title, top_n=3)
+        # top_n=10 (not the old 3) - a generic single-word title like "Superman"
+        # can have a dozen+ same-named volumes that all score identically on
+        # fuzzy title match alone (confirmed: the correct volume for a real
+        # test case ranked 6th), so creator disambiguation below needs real
+        # room to search before falling back to an arbitrary tie-broken pick.
+        volume_candidates = self.best_volume_matches(title, top_n=10)
         if not volume_candidates:
             logger.info('No volume match for %r', title)
             return None
 
-        raw_issue = None
-        matched_volume = None
+        # ComicVine's volume search results carry no creator info (that's an
+        # issue-level field), so title-matching alone can't tell "Absolute
+        # Superman" (2025, DC) apart from "Supermán" (Editorial Novaro, a
+        # decades-old Mexican reprint line) - both just fuzzy-match "Superman".
+        # For each title-matched candidate (in title-match order): confirm the
+        # issue exists in that volume via the cheap filtered lookup, then
+        # re-fetch it by id through get_issue_detail() - get_issue_by_volume's
+        # /issues (plural) endpoint reliably comes back with EMPTY
+        # person_credits/character_credits even when the issue has them;
+        # only the singular /issue/{id} endpoint actually returns credits, and
+        # credits are exactly what we need to check `creator` against.
+        # Prefer whichever candidate actually credits `creator`; fall back to
+        # the first candidate that has the issue at all if none do (matches
+        # the old behavior when no creator hint exists).
+        first_hit = None
+        creator_hit = None
         for volume in volume_candidates:
             raw_issue = self.get_issue_by_volume(volume['id'], issue)
-            if raw_issue is not None:
-                matched_volume = volume
-                break
+            if raw_issue is None:
+                continue
+            full_record = self.get_issue_detail(raw_issue['id'])
+            if full_record is None:
+                continue
+            if first_hit is None:
+                first_hit = (volume, full_record)
+            if not creator:
+                break  # nothing to disambiguate with - first hit is the answer, as before
+            if self._record_has_creator(full_record, creator):
+                creator_hit = (volume, full_record)
+                break  # confirmed - no need to spend more API calls checking further candidates
 
-        if raw_issue is None:
+        if first_hit is None:
             logger.info(
                 "Checked %d volume candidate(s) for %r but issue #%s wasn't found in any of them",
                 len(volume_candidates), title, issue,
             )
             return None
 
+        matched_volume, record = creator_hit or first_hit
+        if creator and creator_hit is None:
+            logger.info(
+                'No candidate volume for %r credited %r on issue #%s - using the best title match instead',
+                title, creator, issue,
+            )
+
         logger.info(
             'Matched %r (id=%s) as the volume for issue #%s',
             matched_volume['name'], matched_volume['id'], issue,
         )
-        record = self._normalize_issue(raw_issue)
 
         return record
 
@@ -441,4 +481,4 @@ if __name__ == '__main__':
     # Scenario 3: the user chooses out of the 3 candidates, or manually edits an entry, and we collect the full issue
     updated_result = client.hydrate(record=candidates[0])
     print(updated_result)
-    client.download_cover(record=updated_result, dest_dir='test_output')
+    # client.download_cover(record=updated_result, dest_dir='test_output')

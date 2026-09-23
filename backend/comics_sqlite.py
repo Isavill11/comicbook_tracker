@@ -8,6 +8,21 @@ from sqlalchemy.orm import relationship
 from backend.database import Base
 
 
+def normalize_publisher(raw: Optional[str]) -> Optional[str]:
+    """Canonicalize ComicVine's publisher name into a small set of values a
+    frontend publisher toggle can switch on reliably - ComicVine returns
+    'DC Comics' vs 'Marvel' (inconsistent casing/suffix), not a short code.
+    Anything else (Image, Dark Horse, etc.) passes through as-is."""
+    if not raw:
+        return None
+    lowered = raw.strip().lower()
+    if lowered in ("dc comics", "dc"):
+        return "DC"
+    if lowered in ("marvel", "marvel comics"):
+        return "Marvel"
+    return raw.strip()
+
+
 def parse_issue_number(raw: Optional[str]) -> Optional[float]:
     """Pull the first numeric token out of a ComicVine issue_number string so
     issues sort correctly ('2' before '10'). '1AU' -> 1.0, 'Annual 1' -> 1.0,
