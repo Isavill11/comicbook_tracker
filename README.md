@@ -26,25 +26,11 @@ Visit `http://localhost:8000`.
 ## 2. Get a ComicVine API key
 Sign in at https://comicvine.gamespot.com/api/ and copy your key. Free, generous rate limits for personal use.
 
-## 3. Deploy to your ZimaOS box (so it's reachable from your phone)
+Save that key to your environment variables and name it "COMICVINE_API_KEY"
 
-Since you've already got Cloudflare Tunnel + CasaOS running for Immich/WebDAV, this slots in the same way:
+## 3. Deploy 
 
-```bash
-# on the ZimaOS box
-git clone <your repo, or scp the folder over>
-cd comic-tracker
-echo "COMICVINE_API_KEY=your_key_here" > .env
-docker compose up -d --build
-```
-
-This exposes it on port `8010`. Two ways to reach it from your phone:
-- **Cloudflare Tunnel** (recommended, matches your existing setup): add a route for something like `comics.isaserver.online` → `http://localhost:8010`, same pattern as `photos.isaserver.online`.
-- **Tailscale**: since Tailscale + MagicDNS is already running, you can hit `http://zimahome.tail303d7f.ts.net:8010` directly with zero extra config.
-
-Either way, add it to your phone's home screen as a bookmark ("Add to Home Screen") and it behaves like an app icon.
-
-## Known rough edges to improve next (left for you, as requested)
+## Known bugs
 - **OCR matching is text-based, not pixel-based.** It works well for clean, well-lit photos of the cover logo/title but will sometimes surface no or wrong candidates for busy covers. A real next step: precompute perceptual hashes (`imagehash` library) for candidate cover images and rank them by visual similarity to the upload, instead of relying purely on OCR text.
 - **Character avatars** currently reuse a random cover from that character's comics as the thumbnail (there's no character-portrait endpoint wired up yet). ComicVine's `/character/` endpoint has real character portraits if you want to swap that in.
 - **No auth** — fine for a personal homelab app behind your own tunnel, but don't expose it to the open internet as-is.
