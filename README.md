@@ -1,4 +1,4 @@
-# Longbox — personal comic collection tracker
+# personal comic collection tracker
 
 ## What's here (working MVP)
 - `POST /api/upload` — take a cover photo, OCR the text, search ComicVine, return candidate thumbnails
